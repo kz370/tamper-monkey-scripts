@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Media Toolbox
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.0.1
 // @author       khaledzaki370
 // @updateURL    https://raw.githubusercontent.com/kz370/tamper-monkey-scripts/main/media-toolbox.user.js
 // @downloadURL  https://raw.githubusercontent.com/kz370/tamper-monkey-scripts/main/media-toolbox.user.js
@@ -48,6 +48,7 @@
     };
 
     const VOLUME_PRESETS = [50, 100, 150, 200, 300, 400];
+    const VOLUME_STEP_PRESETS = [1, 5, 10];
     const SPEED_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3];
 
     const DEFAULTS = {
@@ -63,6 +64,7 @@
         compressor: false,
         // Player
         thumbs: false,
+        volStep: 5,         // percent per Alt+↑/↓
         seekArrow: 5,       // seconds per ←/→
         seekAlt: 10,        // seconds per Alt+←/→
         seekCtrl: 15,       // seconds per Ctrl+←/→
@@ -74,7 +76,7 @@
     };
 
     const AUDIO_KEYS = ['volume', 'speed', 'preservePitch', 'mono', 'balance', 'eq', 'voice', 'noise', 'compressor'];
-    const PLAYER_KEYS = ['thumbs', 'seekArrow', 'seekAlt', 'seekCtrl']; // saved like audio keys, but "Reset everything" leaves them alone
+    const PLAYER_KEYS = ['thumbs', 'volStep', 'seekArrow', 'seekAlt', 'seekCtrl']; // saved like audio keys, but "Reset everything" leaves them alone
     const SEEK_KEYS = ['seekArrow', 'seekAlt', 'seekCtrl'];
     const UI_KEYS = ['side', 'offset', 'pinned', 'tab'];
 
@@ -170,6 +172,7 @@
         loaded.balance = clamp(Number(loaded.balance) || 0, -1, 1);
         loaded.offset = clamp(Number(loaded.offset) || 50, 5, 95);
         loaded.thumbs = loaded.thumbs === true;
+        loaded.volStep = clamp(Math.round(Number(loaded.volStep)) || DEFAULTS.volStep, 1, 50);
         SEEK_KEYS.forEach(key => {
             loaded[key] = clamp(Math.round(Number(loaded[key])) || DEFAULTS[key], 1, 600);
         });
@@ -1203,6 +1206,63 @@
         .toggles.compact b { font-size: 12.5px; white-space: nowrap; }
         .toggles.compact small, .toggles.compact .t-sw { display: none; }
 
+        /* ------------------------------------------------ STEP ROW & INPUT */
+
+        .step-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .step-input-wrap {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            height: 30px;
+            padding: 0 8px;
+            border-radius: 999px;
+            background: var(--surface);
+            border: 1px solid transparent;
+            cursor: text;
+            transition: border-color .15s ease, background .15s ease;
+        }
+
+        .step-input-wrap:hover { background: var(--surface-hover); }
+
+        .step-input-wrap:focus-within {
+            border-color: var(--accent);
+            background: rgba(0, 0, 0, .35);
+        }
+
+        .step-input-wrap input {
+            width: 30px;
+            font: inherit;
+            font-size: 12.5px;
+            font-weight: 600;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: var(--text);
+            background: transparent;
+            border: 0;
+            padding: 0;
+            margin: 0;
+            outline: none;
+            -moz-appearance: textfield;
+        }
+
+        .step-input-wrap input::-webkit-outer-spin-button,
+        .step-input-wrap input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .step-input-wrap span {
+            color: var(--muted);
+            font-size: 11.5px;
+            font-weight: 700;
+        }
+
         /* ------------------------------------------------ SEEK STEPS */
 
         .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
@@ -1503,6 +1563,22 @@
 
                         <div class="field">
                             <div class="field-head">
+                                <label>Volume step (Alt + ↑ / ↓)</label>
+                                <output data-ref="volStepOut">±5%</output>
+                            </div>
+                            <div class="step-row">
+                                <div class="chips" style="--cols: 3; margin-top: 0; flex: 1;">
+                                    ${VOLUME_STEP_PRESETS.map(v => chip('data-vol-step', v, '±' + v + '%')).join('')}
+                                </div>
+                                <label class="step-input-wrap" title="Custom volume step percentage (1–50%)">
+                                    <input type="number" min="1" max="50" step="1" data-ref="volStepInput" aria-label="Custom volume step percent">
+                                    <span>%</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <div class="field-head">
                                 <label>Balance</label>
                                 <output data-ref="balOut">Center</output>
                             </div>
@@ -1516,7 +1592,7 @@
                         </div>
 
                         <div class="toggles compact">
-                            ${toggle('voice', ICON.mic, 'Voice boost', 'Clearer dialogue &amp; speech (Alt+V)')}
+                            ${toggle('voice', ICON.mic, 'Voice boost', 'Clearer dialogue &amp; speech (Alt+V / Alt+B)')}
                             ${toggle('noise', ICON.noise, 'Noise cut', 'Cut hum, rumble &amp; hiss (Alt+N)')}
                             ${toggle('compressor', ICON.gauge, 'Normalize', 'Tame loud peaks, lift quiet parts')}
                             ${toggle('mono', ICON.mono, 'Mono', 'Mix both channels together')}
@@ -1594,13 +1670,13 @@
                             </div>
                             <div class="keys">
                         ${key('Alt + A', 'Open / close toolbox')}
-                        ${key('Alt + ↑ / ↓', 'Volume ±10%')}
+                        ${key('Alt + ↑ / ↓', 'Volume ±<span data-ref="keyVolStep">5</span>%')}
                         ${key('Alt + M', 'Mute')}
                         ${key('Alt + . / ,', 'Speed ±0.25×')}
                         ${key('← / →', 'Back / forward <span data-ref="keySeekArrow"></span> s')}
                         ${key('Alt + ← / →', 'Back / forward <span data-ref="keySeekAlt"></span> s')}
                         ${key('Ctrl + ← / →', 'Back / forward <span data-ref="keySeekCtrl"></span> s')}
-                        ${key('Alt + V', 'Voice boost')}
+                        ${key('Alt + V / B', 'Voice boost')}
                         ${key('Alt + N', 'Noise reduction')}
                         ${key('Alt + P', 'Seek bar thumbnails')}
                         ${key('Alt + hover', 'Preview anywhere on a video')}
@@ -1785,6 +1861,21 @@
         shadow.querySelectorAll('[data-vol]').forEach(chip => {
             chip.classList.toggle('on', !settings.muted && Number(chip.dataset.vol) === volume);
         });
+
+        // Volume step
+        const volStep = settings.volStep || DEFAULTS.volStep;
+        if (refs.volStepOut) {
+            refs.volStepOut.textContent = `±${volStep}%`;
+        }
+        if (refs.volStepInput && shadow.activeElement !== refs.volStepInput) {
+            refs.volStepInput.value = volStep;
+        }
+        shadow.querySelectorAll('[data-vol-step]').forEach(chip => {
+            chip.classList.toggle('on', Number(chip.dataset.volStep) === volStep);
+        });
+        if (refs.keyVolStep) {
+            refs.keyVolStep.textContent = volStep;
+        }
 
         // Balance
         const balance = Math.round(settings.balance * 100);
@@ -2158,6 +2249,12 @@
         }
     }
 
+    function setVolStep(step) {
+        settings.volStep = clamp(Math.round(Number(step)) || DEFAULTS.volStep, 1, 50);
+        saveSettings();
+        render();
+    }
+
     function toggleMute(toast) {
         settings.muted = !settings.muted;
         syncAll();
@@ -2427,6 +2524,8 @@
                 handleAction(data.act);
             } else if (data.vol) {
                 setVolume(Number(data.vol) / 100);
+            } else if (data.volStep) {
+                setVolStep(Number(data.volStep));
             } else if (data.speed) {
                 setSpeed(Number(data.speed));
             } else if (data.preset) {
@@ -2447,6 +2546,19 @@
 
             if (input === refs.vol) {
                 setVolume(Number(input.value) / 100);
+            } else if (input === refs.volStepInput) {
+                const val = clamp(Math.round(Number(input.value)) || settings.volStep, 1, 50);
+                settings.volStep = val;
+                if (refs.volStepOut) {
+                    refs.volStepOut.textContent = `±${val}%`;
+                }
+                if (refs.keyVolStep) {
+                    refs.keyVolStep.textContent = val;
+                }
+                shadow.querySelectorAll('[data-vol-step]').forEach(chip => {
+                    chip.classList.toggle('on', Number(chip.dataset.volStep) === val);
+                });
+                saveSettings();
             } else if (input === refs.bal) {
                 setBalance(Number(input.value) / 100);
             } else if (input === refs.spd) {
@@ -2473,6 +2585,8 @@
                 }
                 seeking = false;
                 renderTransport();
+            } else if (input === refs.volStepInput) {
+                setVolStep(Number(input.value));
             } else if (input === refs.shareAll) {
                 setShareAll(input.checked);
                 showToast('pin', input.checked ? 'Settings saved for all sites' : 'Settings only for this tab');
@@ -2517,7 +2631,14 @@
 
             if (event.target.closest('.tab')) {
                 event.preventDefault();
-                setVolume(settings.volume + (up ? 0.05 : -0.05), true);
+                const step = (settings.volStep || DEFAULTS.volStep) / 100;
+                setVolume(settings.volume + (up ? step : -step), true);
+                return;
+            }
+
+            if (event.target === refs.volStepInput) {
+                event.preventDefault();
+                setVolStep(clamp(settings.volStep + (up ? 1 : -1), 1, 50));
                 return;
             }
 
@@ -2579,20 +2700,32 @@
             }
 
             let handled = true;
+            const code = event.code;
+            const keyLower = event.key ? event.key.toLowerCase() : '';
+            const volDelta = (settings.volStep || DEFAULTS.volStep) / 100;
 
-            switch (event.code) {
-                case 'KeyA': setPanel(!panelOpen); break;
-                case 'ArrowUp': setVolume(settings.volume + 0.1, true); break;
-                case 'ArrowDown': setVolume(settings.volume - 0.1, true); break;
-                case 'KeyM': toggleMute(true); break;
-                case 'Period': setSpeed(settings.speed + 0.25, true); break;
-                case 'Comma': setSpeed(settings.speed - 0.25, true); break;
-                case 'KeyV': toggleSetting('voice', true); break;
-                case 'KeyN': toggleSetting('noise', true); break;
-                case 'KeyP': toggleSetting('thumbs', true); break;
-                case 'Digit0':
-                case 'Numpad0': resetAll(true); break;
-                default: handled = false;
+            if (code === 'KeyA' || keyLower === 'a') {
+                setPanel(!panelOpen);
+            } else if (code === 'ArrowUp') {
+                setVolume(settings.volume + volDelta, true);
+            } else if (code === 'ArrowDown') {
+                setVolume(settings.volume - volDelta, true);
+            } else if (code === 'KeyM' || keyLower === 'm') {
+                toggleMute(true);
+            } else if (code === 'Period' || keyLower === '.') {
+                setSpeed(settings.speed + 0.25, true);
+            } else if (code === 'Comma' || keyLower === ',') {
+                setSpeed(settings.speed - 0.25, true);
+            } else if (code === 'KeyV' || code === 'KeyB' || keyLower === 'v' || keyLower === 'b') {
+                toggleSetting('voice', true);
+            } else if (code === 'KeyN' || keyLower === 'n') {
+                toggleSetting('noise', true);
+            } else if (code === 'KeyP' || keyLower === 'p') {
+                toggleSetting('thumbs', true);
+            } else if (code === 'Digit0' || code === 'Numpad0' || keyLower === '0') {
+                resetAll(true);
+            } else {
+                handled = false;
             }
 
             if (handled) {
@@ -3739,6 +3872,7 @@
         });
 
         GM_registerMenuCommand('Toggle seek bar thumbnails (Alt+P)', () => toggleSetting('thumbs', true));
+        GM_registerMenuCommand('Toggle voice boost (Alt+V / Alt+B)', () => toggleSetting('voice', true));
 
         GM_registerMenuCommand('Edit always-on sites…', () => {
             const answer = window.prompt(
